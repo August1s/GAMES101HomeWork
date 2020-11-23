@@ -8,6 +8,7 @@
 #include "rasterizer.hpp"
 #include <opencv2/opencv.hpp>
 #include <math.h>
+#include <numeric>
 
 
 rst::pos_buf_id rst::rasterizer::load_positions(const std::vector<Eigen::Vector3f> &positions)
@@ -53,7 +54,7 @@ auto to_vec4(const Eigen::Vector3f& v3, float w = 1.0f)
 //    p1 = Vector3f(point.x() - _v[1].x(), point.y() - _v[0].y(), 0);
 //    p2 = Vector3f(point.x() - _v[2].x(), point.y() - _v[2].y(), 0);
 //
-//    return v01.cross(p0).z() >= 0 && v12.cross(p1).z() >= 0 && v20.cross(p2).z() >= 0 ? true : false;
+//    return v01.cross(p0).z() > 0 && v12.cross(p1).z() > 0 && v20.cross(p2).z() > 0 ? true : false;
 //
 //}
 static bool insideTriangle(float x, float y, const Vector3f* _v)
@@ -107,7 +108,7 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
         {
             vert.x() = 0.5*width*(vert.x()+1.0);
             vert.y() = 0.5*height*(vert.y()+1.0);
-            vert.z() = -vert.z() * f1 + f2;
+            vert.z() = vert.z() * f1 + f2;
         }
 
         for (int i = 0; i < 3; ++i)
@@ -125,7 +126,8 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
         t.setColor(1, col_y[0], col_y[1], col_y[2]);
         t.setColor(2, col_z[0], col_z[1], col_z[2]);
 
-        rasterize_triangle(t);
+        //rasterize_triangle(t);
+        rasterize_triangle_with_SuperSimpling(t);
     }
 }
 
@@ -145,13 +147,10 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     {
         for (int y = bottom; y < top; y++)
         {
-            // If so, use the following code to get the interpolated z value.
-            //auto[alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
-            //float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-            //float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-            //z_interpolated *= w_reciprocal;
+            
             if (insideTriangle(x + 0.5, y + 0.5, t.v))
             {
+                // If so, use the following code to get the interpolated z value.
                 auto [alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
                 float w_reciprocal = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
                 float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
@@ -161,6 +160,61 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t) {
                 {
                     depth_buf[get_index(x, y)] = z_interpolated;
                     set_pixel(Vector3f(x, y, 0), t.getColor());
+                }
+            }
+        }
+    }
+}
+
+void rst::rasterizer::rasterize_triangle_with_SuperSimpling(const Triangle& t)
+{
+    auto v = t.toVector4();
+    int left, right, top, bottom; 
+    right = (int)round(fmax(fmax(v[0].x(), v[1].x()), v[2].x()));
+    left = (int)round(fmin(fmin(v[0].x(), v[1].x()), v[2].x()));
+    top = (int)round(fmax(fmax(v[0].y(), v[1].y()), v[2].y()));
+    bottom = (int)round(fmin(fmin(v[0].y(), v[1].y()), v[2].y()));
+
+    for (int x = left; x < right; x++)
+    {
+        for (int y = bottom; y < top; y++)
+        {
+            // 对于每一个片元采样四次，然后平均四次的结果（颜色和深度）
+            // 如果直接算深度的均值，确实会造成黑边
+            int samplecount = 0;
+            float sample_list_Z = 0;
+            Vector3f sample_list_Color = Vector3f(0, 0, 0);
+            bool PixelInside = false;
+            
+            
+            for (int i = 0; i < 2; i++)
+            {
+                for (int j = 0; j < 2; j++)
+                {
+                    if (insideTriangle(x + 0.25 * i, y + 0.25 * j, t.v))
+                    {
+                        auto [alpha, beta, gamma] = computeBarycentric2D(x + 0.25 * i, y + 0.25 * j, t.v);
+                        float w_reciprocal = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                        float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                        z_interpolated *= w_reciprocal;
+                        
+                        sample_list_Z += z_interpolated;
+                        sample_list_Color += t.getColor();
+                        PixelInside = true;
+                        samplecount++;
+                    }
+
+                }
+            }
+            
+            if (PixelInside)
+            {
+                float z_interpolated = sample_list_Z / samplecount;
+                Vector3f finalColor = sample_list_Color / 4;
+                if (z_interpolated < depth_buf[get_index(x, y)])
+                {
+                    depth_buf[get_index(x, y)] = z_interpolated;
+                    set_pixel(Vector3f(x, y, 0), finalColor);
                 }
             }
         }
