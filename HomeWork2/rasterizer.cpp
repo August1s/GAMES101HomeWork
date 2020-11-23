@@ -8,7 +8,7 @@
 #include "rasterizer.hpp"
 #include <opencv2/opencv.hpp>
 #include <math.h>
-#include <numeric>
+#include <array>
 
 
 rst::pos_buf_id rst::rasterizer::load_positions(const std::vector<Eigen::Vector3f> &positions)
@@ -179,10 +179,10 @@ void rst::rasterizer::rasterize_triangle_with_SuperSimpling(const Triangle& t)
     {
         for (int y = bottom; y < top; y++)
         {
-            // 对于每一个片元采样四次，然后平均四次的结果（颜色和深度）
-            // 如果直接算深度的均值，确实会造成黑边
-            int samplecount = 0;
-            float sample_list_Z = 0;
+            // 对于每一个片元采样四次，然后平均四次的颜色结果和最小深度结果
+
+            //int samplecount = 0;
+            float sample_list_Z = std::numeric_limits<float>::infinity();
             Vector3f sample_list_Color = Vector3f(0, 0, 0);
             bool PixelInside = false;
             
@@ -198,10 +198,10 @@ void rst::rasterizer::rasterize_triangle_with_SuperSimpling(const Triangle& t)
                         float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
                         z_interpolated *= w_reciprocal;
                         
-                        sample_list_Z += z_interpolated;
+                        sample_list_Z = z_interpolated < sample_list_Z ? z_interpolated : sample_list_Z;
                         sample_list_Color += t.getColor();
                         PixelInside = true;
-                        samplecount++;
+                        //samplecount++;
                     }
 
                 }
@@ -209,7 +209,7 @@ void rst::rasterizer::rasterize_triangle_with_SuperSimpling(const Triangle& t)
             
             if (PixelInside)
             {
-                float z_interpolated = sample_list_Z / samplecount;
+                float z_interpolated = sample_list_Z;
                 Vector3f finalColor = sample_list_Color / 4;
                 if (z_interpolated < depth_buf[get_index(x, y)])
                 {
