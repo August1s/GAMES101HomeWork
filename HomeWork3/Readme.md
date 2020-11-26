@@ -1,1 +1,1 @@
-### ÔÚHomework3ÖÐ£¬Èç¹ûÊ¹ÓÃopenCVµÄdebug°æ±¾£¬»á²úÉúÒ»¸ö¶ÏÑÔ¾¯¸æ£¬Òò´ËÕû¸öÏîÄ¿Ó¦¸ÃÊ¹ÓÃ**release**°æ±¾µÄlib¿â
+### Homework3ä¸­ï¼Œå¦‚æžœä½¿ç”¨openCVçš„debugç‰ˆæœ¬ï¼Œä¼šäº§ç”Ÿä¸€ä¸ªæ–­è¨€è­¦å‘Šï¼Œå› æ­¤æ•´ä¸ªé¡¹ç›®åº”è¯¥ä½¿ç”¨releaseç‰ˆæœ¬çš„libåº“
