@@ -254,17 +254,24 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
 
     float kh = 0.2, kn = 0.1;
     
-    // TODO: Implement displacement mapping here
-    // Let n = normal = (x, y, z)
-    // Vector t = (x*y/sqrt(x*x+z*z),sqrt(x*x+z*z),z*y/sqrt(x*x+z*z))
-    // Vector b = n cross product t
-    // Matrix TBN = [t b n]
-    // dU = kh * kn * (h(u+1/w,v)-h(u,v))
-    // dV = kh * kn * (h(u,v+1/h)-h(u,v))
-    // Vector ln = (-dU, -dV, 1)
-    // Position p = p + kn * n * h(u,v)
-    // Normal n = normalize(TBN * ln)
+    Eigen::Vector3f n = normal, t, b;
+    t << n.x() * n.y() / std::sqrt(n.x() * n.x() + n.z() * n.z()),
+        std::sqrt(n.x() * n.x() + n.z() * n.z()),
+        n.z()* n.y() / std::sqrt(n.x() * n.x() + n.z() * n.z());
+    b = n.cross(t);
+    Eigen::Matrix3f TBN;
+    TBN << t, b, n;
 
+    float u = payload.tex_coords.x(), v = payload.tex_coords.y();
+    float w = payload.texture->width, h = payload.texture->height;
+    float dU = kh * kn * (payload.texture->getColor(u + 1.0f / w, v).norm() - payload.texture->getColor(u, v).norm());
+    float dV = kh * kn * (payload.texture->getColor(u, v + 1.0f / h).norm() - payload.texture->getColor(u, v).norm());
+    Vector3f ln = { -dU, -dV, 1 };
+    normal = (TBN * ln).normalized();
+
+    // Position p = p + kn * n * h(u,v)
+    // Update the height of position/point
+    point += kn * n * payload.texture->getColor(u, v).norm();
 
     Eigen::Vector3f result_color = {0, 0, 0};
 
@@ -272,8 +279,16 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
+        auto LightDir = (light.position - point).normalized();
+        auto ViewDir = (eye_pos - point).normalized();
+        auto H = (LightDir + ViewDir).normalized();
 
+        float r = (light.position - point).norm();
 
+        auto Ld = kd.cwiseProduct(light.intensity / (r * r)) * std::fmax(0, normal.dot(LightDir));
+        auto Ls = ks.cwiseProduct(light.intensity / (r * r)) * std::pow(std::fmax(0, normal.dot(H)), p);
+        auto La = ka.cwiseProduct(amb_light_intensity);
+        result_color += (La + Ld + Ls);
     }
 
     return result_color * 255.f;
@@ -370,7 +385,8 @@ int main(int argc, const char** argv)
     /*std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = texture_fragment_shader;
     auto texture_path = "spot_texture.png";
     r.set_texture(Texture(obj_path + texture_path));*/
-    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = bump_fragment_shader;
+    //std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = bump_fragment_shader;
+    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = displacement_fragment_shader;
     auto texture_path = "hmap.jpg";
     r.set_texture(Texture(obj_path + texture_path));
 
